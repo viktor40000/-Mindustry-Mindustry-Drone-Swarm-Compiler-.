@@ -1,0 +1,81 @@
+import math
+
+class MindustrySwarmCompiler:
+    def __init__(self, total_units: int = 100):
+        self.total_units = total_units
+        # Базова матриця літер імені "VICTOR" на сітці 5x5
+        self.font_grid = {
+            'V': [(0,4), (1,2), (2,0), (3,2), (4,4)],
+            'I': [(2,4), (2,3), (2,2), (2,1), (2,0), (1,4), (3,4), (1,0), (3,0)],
+            'C': [(0,1), (0,2), (0,3), (1,4), (2,4), (3,4), (1,0), (2,0), (3,0)],
+            'O': [(0,1), (0,2), (0,3), (4,1), (4,2), (4,3), (1,4), (2,4), (3,4), (1,0), (2,0), (3,0)],
+            'R': [(0,0), (0,1), (0,2), (0,3), (0,4), (1,4), (2,4), (3,3), (2,2), (1,2), (2,1), (3,0)],
+            'T': [(0,4), (1,4), (2,4), (3,4), (4,4), (2,3), (2,2), (2,1), (2,0)]
+        }
+
+    def generate_name_coordinates(self, name: str, scale: float = 8.0, spacing: float = 6.0) -> list:
+        """Перетворює текст імені в глобальні координати на карті Mindustry."""
+        name = name.upper()
+        all_points = []
+        
+        current_offset_x = 0.0
+        for char in name:
+            if char in self.font_grid:
+                for (x, y) in self.font_grid[char]:
+                    glob_x = current_offset_x + (x * scale)
+                    glob_y = y * scale
+                    all_points.append((glob_x, glob_y))
+            current_offset_x += (5 * scale) + spacing
+            
+        return all_points
+
+    def compile_to_mlog(self, name: str, unit_type: str = "@flare") -> str:
+        """Генерує фінальний, синтаксично чистий mlog-код для Mindustry."""
+        points = self.generate_name_coordinates(name)
+        num_points = len(points)
+        
+        if num_points == 0:
+            return "ID_ERROR: No valid characters."
+
+        mlog = []
+        # 0: Прив'язка юніта
+        mlog.append(f"ubind {unit_type}")
+        # 1: Захист від null (якщо юнітів немає на карті, повертаємось на старт)
+        mlog.append("jump 0 equal @unit null")
+        # 2: Перевірка чи живий юніт
+        mlog.append("sensor dead @unit @dead")
+        # 3: Якщо мертвий — шукаємо іншого
+        mlog.append("jump 0 equal dead 1")
+        # 4: Інкремент ідентифікатора
+        mlog.append("op add id id 1")
+        # 5: Обмеження пулу юнітів (0-99)
+        mlog.append(f"op mod target_id id {self.total_units}")
+
+        # Розрахунок фінальної лінії стрибка (6 початкових рядків + 4 рядки на кожен з 100 юнітів)
+        end_line = 6 + (self.total_units * 4)
+
+        # Генерація Jump-таблиці
+        for idx in range(self.total_units):
+            pt_idx = idx % num_points
+            tx, ty = points[pt_idx]
+            
+            # Якщо target_id не збігається, перестрибуємо на перевірку наступного юніта (+4 лінії вперед)
+            mlog.append(f"jump {len(mlog) + 4} notEqual target_id {idx}")
+            mlog.append(f"op add out_x @thisx {round(tx, 1)}")
+            mlog.append(f"op add out_y @thisy {round(ty, 1)}")
+            # ВИПРАВЛЕНО: Прибрано "0 0" з команди always
+            mlog.append(f"jump {end_line} always")
+
+        # Фінальні команди керування
+        # ВИПРАВЛЕНО: Прибрано зайві "0 0 0" з команди move
+        mlog.append("ucontrol move out_x out_y")
+        mlog.append("end")
+        
+        return "\n".join(mlog)
+
+if __name__ == "__main__":
+    compiler = MindustrySwarmCompiler(total_units=100)
+    generated_code = compiler.compile_to_mlog(name="VICTOR", unit_type="@flare")
+    
+    print("=== ВИПРАВЛЕНИЙ КОД ДЛЯ MINDUSTRY LOGIC ===\n")
+    print(generated_code)
